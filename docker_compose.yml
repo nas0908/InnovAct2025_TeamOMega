@@ -1,0 +1,63 @@
+version: "3.8"
+services:
+  portainer:
+    image: portainer/portainer-ce
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./portainer_data:/data
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./homeassistant/config:/config
+    environment:
+      - TZ=Asia/Kolkata
+
+  esphome:
+    image: esphome/esphome
+    container_name: esphome
+    restart: unless-stopped
+    ports:
+      - "6052:6052"
+    volumes:
+      - ./esphome:/config
+
+  motioneye:
+    image: ccrisan/motioneye:master-amd64
+    container_name: motioneye
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./motioneye/config:/etc/motioneye
+      - ./motioneye/media:/var/lib/motioneye
+      - /etc/localtime:/etc/localtime:ro
+
+  glances:
+    image: nicolargo/glances:latest
+    container_name: glances
+    restart: unless-stopped
+    ports:
+      - "61208:61208"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  zerotier:
+    image: zerotier/zerotier-socat
+    container_name: zerotier
+    restart: unless-stopped
+    network_mode: "host"
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./zerotier:/var/lib/zerotier-one
+
+volumes:
+  portainer_data:

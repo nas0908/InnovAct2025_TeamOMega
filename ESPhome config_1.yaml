@@ -1,0 +1,263 @@
+esphome:
+  name: esphome-web-c00a8c
+  friendly_name: Sweet Home
+  min_version: 2025.5.0
+  name_add_mac_suffix: false
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+# Allow Over-The-Air updates
+ota:
+- platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid  
+  password: !secret wifi_password 
+
+  on_connect:
+    then:
+      - output.turn_on: wifi_led
+
+  on_disconnect:
+    then:
+      - output.turn_off: wifi_led
+
+output:
+  #WIFI status LED
+  - platform: gpio
+    pin: GPIO13
+    id: wifi_led
+
+  #Room - 1 LED
+  - platform: gpio
+    pin: GPIO12
+    id: room1_led
+
+  #Room - 2 LED
+  - platform: gpio
+    pin: GPIO23
+    id: room2_led
+
+  #Kitchen LED
+  - platform: gpio
+    pin: GPIO14
+    id: kitchen_led
+
+  #IN1
+  - platform: gpio
+    id: motor_in1
+    pin: GPIO18
+
+  #IN2
+  - platform: gpio
+    id: motor_in2
+    pin: GPIO19
+
+
+switch:
+  #Room - 1 switch
+  - platform: output
+    name: "Room 1 Light"
+    output: room1_led
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  #Room - 2 switch
+  - platform: output
+    name: "Room 2 Light"
+    output: room2_led
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  #Kitchen switch
+  - platform: output
+    name: "Kitchen Light"
+    output: kitchen_led
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  #Living Room Fan Control
+  - platform: gpio
+    pin: GPIO32   
+    id: relay_control
+    name: "Relay Control"
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  #Motor Control
+  - platform: template
+    name: "Motor Forward"
+    turn_on_action:
+      - output.turn_on: motor_in1
+      - output.turn_off: motor_in2
+    turn_off_action:
+      - output.turn_off: motor_in1
+      - output.turn_off: motor_in2
+
+  - platform: template
+    name: "Motor Reverse"
+    turn_on_action:
+      - output.turn_off: motor_in1
+      - output.turn_on: motor_in2
+    turn_off_action:
+      - output.turn_off: motor_in1
+      - output.turn_off: motor_in2
+
+# Energy Sensor
+uart:
+  id: modbus_uart
+  rx_pin: GPIO3
+  tx_pin: GPIO1
+  baud_rate: 9600
+  stop_bits: 1
+
+modbus:
+  id: modbus1
+  uart_id: modbus_uart
+
+modbus_controller:
+  - id: pzem
+    address: 1         # Slave address
+    modbus_id: modbus1
+    update_interval: 10s
+    command_throttle: 200ms
+    setup_priority: -10
+
+
+sensor:
+  #WiFi signal strength
+  - platform: wifi_signal
+    name: "WiFi Strength"
+    update_interval: 30s
+    id: wifi_signal_db
+    entity_category: "diagnostic"
+
+  - platform: copy 
+    source_id: wifi_signal_db
+    name: "WiFi Signal Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "Signal %"
+    entity_category: "diagnostic"
+
+  #DHT 11 Temperature sensor
+  - platform: dht
+    pin: GPIO22
+    model: DHT11
+    temperature:
+      name: "Room Temperature Celsius"
+      id: room_temp_c
+    humidity:
+      name: "Room Humidity"
+    update_interval: 60s
+
+  - platform: template
+    name: "Room Temperature Fahrenheit"
+    unit_of_measurement: "°F"
+    lambda: |-
+      return (id(room_temp_c).state * 1.8) + 32.0;
+    update_interval: 60s
+
+  # Voltage (1 register, LSB = 0.1V)
+  - platform: modbus_controller
+    modbus_controller_id: pzem
+    name: "Voltage"
+    address: 0
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    filters:
+      - multiply: 0.1
+
+  # Current (2 registers, LSB = 0.001A)
+  - platform: modbus_controller
+    modbus_controller_id: pzem
+    name: "Current"
+    address: 1
+    register_count: 2
+    register_type: read
+    value_type: U_DWORD_R
+    unit_of_measurement: "A"
+    filters:
+      - multiply: 0.001
+
+  # Power (2 registers, LSB = 0.1W)
+  - platform: modbus_controller
+    modbus_controller_id: pzem
+    name: "Power"
+    address: 3
+    register_count: 2
+    register_type: read
+    value_type: U_DWORD_R
+    unit_of_measurement: "W"
+    filters:
+      - multiply: 0.1
+
+  # Energy (2 registers, LSB = 1Wh)
+  - platform: modbus_controller
+    modbus_controller_id: pzem
+    name: "Energy"
+    address: 5
+    register_count: 2
+    register_type: read
+    value_type: U_DWORD_R
+    unit_of_measurement: "Wh"
+    filters:
+      - multiply: 1
+
+  # Frequency (1 register, LSB = 0.1Hz)
+  - platform: modbus_controller
+    modbus_controller_id: pzem
+    name: "Frequency"
+    address: 7
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "Hz"
+    filters:
+      - multiply: 0.1
+
+  # Power factor (1 register, LSB = 0.01)
+  - platform: modbus_controller
+    modbus_controller_id: pzem
+    name: "Power Factor"
+    address: 8
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: ""
+    filters:
+      - multiply: 0.01
+
+  # Alarm Status (1 register, 0xFFFF = alarm)
+  - platform: modbus_controller
+    modbus_controller_id: pzem
+    name: "Alarm Status"
+    address: 9
+    register_type: read
+    value_type: U_WORD
+
+
+binary_sensor:
+  # Vibration Sensor (SW-420)
+  - platform: gpio
+    pin: GPIO26
+    name: "Vibration_Sensor"
+    filters:
+      - delayed_on_off: 10ms
+    device_class: vibration
+    
+  #Reed Switch (Door)
+  - platform: gpio
+    pin:
+      number: GPIO25
+      mode: INPUT_PULLDOWN
+      inverted: True
+    name: "Door_ReedSwitch"
+    device_class: door
+    filters:
+      - delayed_on: 10ms
+      - delayed_off: 10ms
